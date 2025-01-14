@@ -19,11 +19,11 @@ class FollowNotify(_PluginBase):
     # 插件图标
     plugin_icon = "like.jpg"
     # 插件版本
-    plugin_version = "1.1"
+    plugin_version = "1.5"
     # 插件作者
-    plugin_author = "honue"
+    plugin_author = "heruntime01"
     # 作者主页
-    author_url = "https://github.com/honue"
+    author_url = "https://github.com/heruntime01"
     # 插件配置项ID前缀
     plugin_config_prefix = "follownotify_"
     # 加载顺序
