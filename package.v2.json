@@ -362,5 +362,16 @@
             "v1.1": "修复类型导入路径",
             "v1.0": "首次发布 ceshi"
         }
+    },
+    "embylibraryinfo": {
+        "name": "Emby媒体库信息获取",
+        "description": "获取Emby媒体库的基本信息并输出。",
+        "version": "1.0",
+        "icon": "Element_A.png",
+        "author": "thsrite",
+        "level": 1,
+        "history": {
+            "v1.0": "首次发布"
+        }
     }
 }
