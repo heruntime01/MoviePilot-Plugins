@@ -245,16 +245,17 @@ class MediaLibInfo(_PluginBase):
                 }
             }]
 
-    @eventmanager.register(EventType.MediaLibraryUpdated)
+    @eventmanager.register(EventType.TransferComplete)
     def update(self, event: Event):
         """
         媒体库更新事件处理
+        当有新的媒体入库时触发
         """
         if not self._enabled:
             return
 
         if self._debug:
-            logger.info("媒体库更新事件触发，正在更新媒体库信息")
+            logger.info("检测到新媒体入库，正在更新媒体库信息")
 
         libraries = self.get_libraries_info()
         
