@@ -363,7 +363,7 @@
             "v1.0": "首次发布 ceshi"
         }
     },
-    "embylibraryinfo": {
+    "embylibraryinfo": {    
         "name": "Emby媒体库信息获取",
         "description": "获取Emby媒体库的基本信息并输出。",
         "version": "1.0",
@@ -374,7 +374,7 @@
             "v1.0": "首次发布"
         }
     },
-    "autosubscribe": {
+    "AutoSubscribe": {
         "name": "智能订阅助手",
         "description": "使用 AI 辅助识别媒体信息并返回演员表，支持自动订阅。",
         "version": "1.0",
@@ -385,7 +385,7 @@
             "v1.0": "首次发布"
         }
     },
-    "chatgpt2": {
+    "ChatGPT2": {
         "name": "ChatGPT2",
         "description": "消息交互支持与ChatGPT对话。",
         "version": "1.0",
