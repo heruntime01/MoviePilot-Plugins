@@ -1,11 +1,16 @@
 import time
 from typing import Any, List, Dict, Optional, Tuple
-from datetime import datetime
+from datetime import datetime, timedelta
+
+import pytz
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
 
 from app.core.event import eventmanager, Event
 from app.helper.mediaserver import MediaServerHelper
 from app.log import logger
 from app.plugins import _PluginBase
+from app.core.config import settings
 from app.schemas import ServiceInfo, Notification
 from app.schemas.types import EventType, MediaType, NotificationType
 from app.utils.web import WebUtils
@@ -32,21 +37,62 @@ class MediaLibInfo(_PluginBase):
     _enabled = False
     _debug = False
     _notify = False
+    _cron = None
+    _onlyonce = False
     _mediaservers = None
     _last_update_time = None
+    _scheduler: Optional[BackgroundScheduler] = None
 
     def init_plugin(self, config: dict = None):
         """
         插件初始化
         """
-        self.mediaserver_helper = MediaServerHelper()
-        
+        # 停止现有任务
+        self.stop_service()
+
         if config:
             self._enabled = config.get("enabled", False)
             self._debug = config.get("debug", False)
             self._notify = config.get("notify", False)
+            self._cron = config.get("cron")
+            self._onlyonce = config.get("onlyonce", False)
             self._mediaservers = config.get("mediaservers", [])
             self.plugin_config.update(config)
+
+        self.mediaserver_helper = MediaServerHelper()
+
+        # 启动定时任务
+        if self._enabled:
+            # 立即运行一次
+            if self._onlyonce:
+                self._scheduler = BackgroundScheduler(timezone=settings.TZ)
+                logger.info(f"媒体库信息服务启动，立即运行一次")
+                self._scheduler.add_job(func=self.get_libraries_info,
+                                      trigger='date',
+                                      run_date=datetime.now(tz=pytz.timezone(settings.TZ)) + timedelta(seconds=3),
+                                      name="媒体库信息")
+                # 关闭一次性开关
+                self._onlyonce = False
+                self.update_config({
+                    "enabled": self._enabled,
+                    "debug": self._debug,
+                    "notify": self._notify,
+                    "cron": self._cron,
+                    "onlyonce": False,
+                    "mediaservers": self._mediaservers
+                })
+            # 周期运行
+            elif self._cron:
+                self._scheduler = BackgroundScheduler(timezone=settings.TZ)
+                logger.info(f"媒体库信息服务启动，周期：{self._cron}")
+                self._scheduler.add_job(func=self.get_libraries_info,
+                                      trigger=CronTrigger.from_crontab(self._cron),
+                                      name="媒体库信息")
+
+            # 启动任务
+            if self._scheduler and self._scheduler.get_jobs():
+                self._scheduler.print_jobs()
+                self._scheduler.start()
 
         logger.info(f"媒体库信息插件启动，调试模式：{self._debug}")
 
@@ -119,7 +165,7 @@ class MediaLibInfo(_PluginBase):
                                 'component': 'VCol',
                                 'props': {
                                     'cols': 12,
-                                    'md': 4
+                                    'md': 3
                                 },
                                 'content': [
                                     {
@@ -135,7 +181,7 @@ class MediaLibInfo(_PluginBase):
                                 'component': 'VCol',
                                 'props': {
                                     'cols': 12,
-                                    'md': 4
+                                    'md': 3
                                 },
                                 'content': [
                                     {
@@ -151,7 +197,7 @@ class MediaLibInfo(_PluginBase):
                                 'component': 'VCol',
                                 'props': {
                                     'cols': 12,
-                                    'md': 4
+                                    'md': 3
                                 },
                                 'content': [
                                     {
@@ -159,6 +205,22 @@ class MediaLibInfo(_PluginBase):
                                         'props': {
                                             'model': 'notify',
                                             'label': '更新通知'
+                                        }
+                                    }
+                                ]
+                            },
+                            {
+                                'component': 'VCol',
+                                'props': {
+                                    'cols': 12,
+                                    'md': 3
+                                },
+                                'content': [
+                                    {
+                                        'component': 'VSwitch',
+                                        'props': {
+                                            'model': 'onlyonce',
+                                            'label': '立即运行一次'
                                         }
                                     }
                                 ]
@@ -171,7 +233,25 @@ class MediaLibInfo(_PluginBase):
                             {
                                 'component': 'VCol',
                                 'props': {
-                                    'cols': 12
+                                    'cols': 12,
+                                    'md': 6
+                                },
+                                'content': [
+                                    {
+                                        'component': 'VTextField',
+                                        'props': {
+                                            'model': 'cron',
+                                            'label': '执行周期',
+                                            'placeholder': '5位cron表达式，如：0 */6 * * *'
+                                        }
+                                    }
+                                ]
+                            },
+                            {
+                                'component': 'VCol',
+                                'props': {
+                                    'cols': 12,
+                                    'md': 6
                                 },
                                 'content': [
                                     {
@@ -196,6 +276,8 @@ class MediaLibInfo(_PluginBase):
             "enabled": False,
             "debug": False,
             "notify": False,
+            "cron": "0 */6 * * *",
+            "onlyonce": False,
             "mediaservers": []
         }
 
@@ -270,4 +352,11 @@ class MediaLibInfo(_PluginBase):
         """
         退出插件
         """
-        pass
+        try:
+            if self._scheduler:
+                self._scheduler.remove_all_jobs()
+                if self._scheduler.running:
+                    self._scheduler.shutdown()
+                self._scheduler = None
+        except Exception as e:
+            logger.error(f"退出插件失败：{str(e)}")
