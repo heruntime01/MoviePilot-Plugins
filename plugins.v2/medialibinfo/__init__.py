@@ -1,329 +1,98 @@
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List
 from app.core.config import settings
-from app.core.meta import MetaBase
 from app.plugins import _PluginBase
 from app.log import logger
-from app.schemas import NotificationType
-from app.core.types import MediaType
-from app.core.context import MediaInfo
+from app.schemas.types import EventType
+from app.helper.service import ServiceBaseHelper
+from app.db.systemconfig_oper import SystemConfigOper
+from app.schemas import MediaServerConf
 
 
-class MediaLibInfo(_PluginBase):
-    """
-    媒体库信息插件
-    获取并展示媒体库中的电影和电视剧信息
-    """
-    # 插件信息
-    plugin_name = "媒体库信息"
-    plugin_desc = "获取并展示媒体库中的电影和电视剧信息"
+class MediaInfo(_PluginBase):
+    plugin_name = "媒体信息"
+    plugin_desc = "获取媒体库中的电视剧名称、电影名称等信息。"
     plugin_version = "1.1"
     plugin_author = "heruntime01"
-    # 作者主页
-    author_url = "https://github.com/yheruntime01"
-    # 插件配置项ID前缀
-    plugin_config_prefix = "medialibinfo_"
-    # 加载顺序
+    plugin_config_prefix = "mediainfo_"
     plugin_order = 20
-    # 可使用的用户级别
     auth_level = 1
-    # 版本标识
     plugin_version_flag = "v2"
 
-    # 私有属性
-    _enabled = False
-    _movie_path = None
-    _tv_path = None
-    _debug = False
+    _enabled: bool = False
+    _media_server_helper: ServiceBaseHelper[MediaServerConf]
 
     def init_plugin(self, config: Dict[str, Any] = None) -> None:
-        """
-        插件初始化
-        """
-        # 检查版本
         if not hasattr(settings, 'VERSION_FLAG') or settings.VERSION_FLAG != "v2":
             return
 
         # 初始化配置
         if config:
-            self._enabled = config.get("enabled")
-            self._movie_path = config.get("movie_path")
-            self._tv_path = config.get("tv_path")
-            self._debug = config.get("debug")
-            self.plugin_config.update(config)
+            self._enabled = config.get("enabled", False)
 
-        logger.info(f"媒体库信息插件启动，调试模式：{self._debug}")
+        # 初始化媒体服务器帮助类
+        self._media_server_helper = ServiceBaseHelper(
+            config_key=SystemConfigKey.MediaServers,
+            conf_type=MediaServerConf,
+            module_type=ModuleType.MediaServer
+        )
 
-    def get_state(self) -> bool:
-        return self._enabled
+        logger.info(f"媒体信息服务启动")
 
-    def get_form(self) -> Tuple[List[dict], Dict[str, Any]]:
-        """
-        拼装插件配置页面
-        """
-        return [
-            {
-                'component': 'VForm',
-                'content': [
-                    {
-                        'component': 'VRow',
-                        'content': [
-                            {
-                                'component': 'VCol',
-                                'props': {
-                                    'cols': 12,
-                                    'md': 6
-                                },
-                                'content': [
-                                    {
-                                        'component': 'VSwitch',
-                                        'props': {
-                                            'model': 'enabled',
-                                            'label': '启用插件',
-                                        }
-                                    }
-                                ]
-                            },
-                            {
-                                'component': 'VCol',
-                                'props': {
-                                    'cols': 12,
-                                    'md': 6
-                                },
-                                'content': [
-                                    {
-                                        'component': 'VSwitch',
-                                        'props': {
-                                            'model': 'debug',
-                                            'label': '调试日志',
-                                        }
-                                    }
-                                ]
-                            }
-                        ]
-                    },
-                    {
-                        'component': 'VRow',
-                        'content': [
-                            {
-                                'component': 'VCol',
-                                'props': {
-                                    'cols': 12
-                                },
-                                'content': [
-                                    {
-                                        'component': 'VTextField',
-                                        'props': {
-                                            'model': 'movie_path',
-                                            'label': '电影目录',
-                                            'placeholder': '电影媒体库目录'
-                                        }
-                                    }
-                                ]
-                            }
-                        ]
-                    },
-                    {
-                        'component': 'VRow',
-                        'content': [
-                            {
-                                'component': 'VCol',
-                                'props': {
-                                    'cols': 12
-                                },
-                                'content': [
-                                    {
-                                        'component': 'VTextField',
-                                        'props': {
-                                            'model': 'tv_path',
-                                            'label': '剧集目录',
-                                            'placeholder': '电视剧媒体库目录'
-                                        }
-                                    }
-                                ]
-                            }
-                        ]
-                    },
-                    {
-                        'component': 'VRow',
-                        'content': [
-                            {
-                                'component': 'VCol',
-                                'props': {
-                                    'cols': 12,
-                                },
-                                'content': [
-                                    {
-                                        'component': 'VAlert',
-                                        'props': {
-                                            'type': 'info',
-                                            'variant': 'tonal',
-                                            'text': '本插件用于获取并展示媒体库中的电影和电视剧信息。'
-                                        }
-                                    }
-                                ]
-                            }
-                        ]
-                    }
-                ]
-            }
-        ], {
-            "enabled": False,
-            "debug": False,
-            "movie_path": "",
-            "tv_path": ""
-        }
-
-    def get_page(self) -> List[dict]:
-        """
-        拼装插件详情页面
-        """
+    @eventmanager.register(EventType.MediaRecognizeConvert)
+    def get_media_info(self, event):
         if not self._enabled:
-            return [
-                {
-                    'component': 'VAlert',
-                    'props': {
-                        'type': 'warning',
-                        'variant': 'tonal',
-                        'text': '插件未启用'
-                    }
-                }
-            ]
+            return
+
+        mediaid = event.event_data.get("mediaid")
+        convert_type = event.event_data.get("convert_type")
+
+        if not mediaid or not convert_type:
+            logger.error("缺少必要的参数：mediaid 或 convert_type")
+            return
 
         try:
-            # 获取媒体库信息
-            movies = self.chain.list_media_files(self._movie_path, MediaType.MOVIE)
-            tvs = self.chain.list_media_files(self._tv_path, MediaType.TV)
+            # 解析 mediaid
+            mediaid_parts = mediaid.split(":")
+            if len(mediaid_parts) != 2:
+                raise ValueError("无效的 mediaid 格式")
 
-            if self._debug:
-                logger.info(f"获取到电影：{len(movies)} 部")
-                logger.info(f"获取到剧集：{len(tvs)} 部")
+            media_source, media_id = mediaid_parts
 
-            # 构建展示内容
-            contents = []
-            
-            # 电影信息
-            if movies:
-                contents.append({
-                    'component': 'VDivider',
-                    'props': {
-                        'class': 'my-4'
-                    }
-                })
-                contents.append({
-                    'component': 'div',
-                    'props': {
-                        'class': 'text-h6 mb-4'
-                    },
-                    'text': f'电影 ({len(movies)})'
-                })
+            # 获取媒体服务器实例
+            media_server = self._get_media_server(media_source)
+            if not media_server:
+                logger.error(f"未找到对应的媒体服务器：{media_source}")
+                return
 
-                for movie in movies:
-                    mediainfo: MediaInfo = self.chain.recognize_media(meta=movie, mtype=MediaType.MOVIE)
-                    if mediainfo:
-                        contents.append(self.__build_media_card(mediainfo))
+            # 调用媒体服务器API获取详细信息
+            media_details = media_server.get_media_detail(media_id)
+            if not media_details:
+                logger.error(f"无法获取媒体详情：{mediaid}")
+                return
 
-            # 剧集信息
-            if tvs:
-                contents.append({
-                    'component': 'VDivider',
-                    'props': {
-                        'class': 'my-4'
-                    }
-                })
-                contents.append({
-                    'component': 'div',
-                    'props': {
-                        'class': 'text-h6 mb-4'
-                    },
-                    'text': f'剧集 ({len(tvs)})'
-                })
-
-                for tv in tvs:
-                    mediainfo: MediaInfo = self.chain.recognize_media(meta=tv, mtype=MediaType.TV)
-                    if mediainfo:
-                        contents.append(self.__build_media_card(mediainfo))
-
-            return contents
+            # 发送结果
+            self._send_media_info_result(media_details)
 
         except Exception as e:
-            logger.error(f"获取媒体库信息出错：{str(e)}")
-            return [{
-                'component': 'VAlert',
-                'props': {
-                    'type': 'error',
-                    'variant': 'tonal',
-                    'text': f'获取媒体库信息出错：{str(e)}'
-                }
-            }]
+            logger.error(f"处理媒体信息时出错: {str(e)}")
 
-    def __build_media_card(self, mediainfo: MediaInfo) -> dict:
+    def _get_media_server(self, media_source: str) -> Optional[Any]:
         """
-        构建媒体信息卡片
+        获取指定类型的媒体服务器实例
+        :param media_source: 媒体源类型（如 'plex', 'emby', 'jellyfin'）
+        :return: 对应的媒体服务器实例
         """
-        return {
-            'component': 'VCard',
-            'props': {
-                'class': 'mb-4'
-            },
-            'content': [
-                {
-                    'component': 'div',
-                    'props': {
-                        'class': 'd-flex'
-                    },
-                    'content': [
-                        {
-                            'component': 'VImg',
-                            'props': {
-                                'src': mediainfo.get_poster_image(),
-                                'height': 150,
-                                'width': 100,
-                                'class': 'rounded-lg'
-                            }
-                        },
-                        {
-                            'component': 'VCardText',
-                            'content': [
-                                {
-                                    'component': 'div',
-                                    'props': {
-                                        'class': 'text-h6'
-                                    },
-                                    'text': mediainfo.title
-                                },
-                                {
-                                    'component': 'div',
-                                    'props': {
-                                        'class': 'text-subtitle-1'
-                                    },
-                                    'text': f"年份：{mediainfo.year}"
-                                },
-                                {
-                                    'component': 'div',
-                                    'text': f"评分：{mediainfo.vote_average}"
-                                },
-                                {
-                                    'component': 'div',
-                                    'text': mediainfo.overview[:200] + '...' if len(mediainfo.overview) > 200 else mediainfo.overview
-                                }
-                            ]
-                        }
-                    ]
-                }
-            ]
-        }
+        service_info = self._media_server_helper.get_service(name=media_source)
+        if service_info and service_info.instance:
+            return service_info.instance
+        return None
 
-    def get_command(self) -> List[Dict[str, Any]]:
-        pass
-
-    def get_api(self) -> List[Dict[str, Any]]:
-        return []
-
-    def get_service(self) -> List[Dict[str, Any]]:
-        return []
-
-    def stop_service(self):
+    def _send_media_info_result(self, media_details: Dict[str, Any]):
         """
-        退出插件
+        发送媒体信息结果事件
+        :param media_details: 媒体详情字典
         """
-        pass 
+        eventmanager.send_event(
+            EventType.MediaRecognizeConvert,
+            {"media_dict": media_details}
+        )
