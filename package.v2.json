@@ -319,22 +319,21 @@
     "airecognition": {
         "name": "AI辅助识别",
         "description": "使用AI技术辅助识别影视信息",
-        "labels": "工具",
-        "version": "1.0",
+        "version": "1.1",
         "icon": "Docker.png",
         "author": "heruntime01",
         "level": 1,
         "history": {
+            "v1.1": "修复事件监听类型",
             "v1.0": "首次发布"
         }
     },
     "autobackuptest": {
         "name": "自动备份测试",
         "description": "自动备份数据和配置文件。",
-        "labels": "工具",
         "version": "1.0",
         "icon": "Time_machine_B.png",
-        "author": "heruntime01",
+        "author": "thsrite",
         "level": 1,
         "history": {
             "v1.0": "首次发布"
@@ -343,24 +342,25 @@
     "follownotify": {
         "name": "收藏更新通知",
         "description": "在Emby上收藏剧集，当有新集更新时发送通知。适合针对性的获取剧集更新通知、榜单订阅时有不看的剧集不想收到更新通知。",
-        "labels": "工具",
         "version": "1.5",
         "icon": "like.jpg",
         "author": "heruntime01",
         "level": 1,
         "history": {
-            "v1.5": "首次发布V2版本"
+            "v1.5": "修复事件监听类型",
+            "v1.1": "首次发布V2版本"
         }
     },
     "medialibinfo": {
         "name": "媒体库信息",
         "description": "获取并展示媒体库中的电影和电视剧信息",
-        "version": "1.0",
+        "version": "1.1",
         "icon": "movie.jpg",
-        "author": "your_name",
+        "author": "heruntime01",
         "level": 1,
         "history": {
-            "v1.0": "首次发布"
+            "v1.1": "修复类型导入路径",
+            "v1.0": "首次发布 ceshi"
         }
     }
 }

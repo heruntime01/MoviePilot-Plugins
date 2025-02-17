@@ -14,7 +14,7 @@ class AiRecognition(_PluginBase):
     # 插件信息
     plugin_name = "AI辅助识别"
     plugin_desc = "使用AI技术辅助识别影视信息"
-    plugin_version = "1.0"
+    plugin_version = "1.1"
     plugin_author = "heruntime01"
     # 作者主页
     author_url = "https://github.com/heruntime01"

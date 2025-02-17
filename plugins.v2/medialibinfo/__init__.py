@@ -16,8 +16,8 @@ class MediaLibInfo(_PluginBase):
     # 插件信息
     plugin_name = "媒体库信息"
     plugin_desc = "获取并展示媒体库中的电影和电视剧信息"
-    plugin_version = "1.0"
-    plugin_author = "your_name"
+    plugin_version = "1.1"
+    plugin_author = "heruntime01"
     # 作者主页
     author_url = "https://github.com/yheruntime01"
     # 插件配置项ID前缀
