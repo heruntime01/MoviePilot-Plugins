@@ -22,124 +22,42 @@ class AutoSubscribe(_PluginBase):
     plugin_config_prefix = "autosubscribe_"
     plugin_order = 19
     auth_level = 1
-    plugin_version_flag = "v2"
 
     # 私有属性
+    openai = None
     _enabled = False
+    _proxy = False
+    _recognize = False
+    _openai_url = None
     _openai_key = None
-    _proxy = None
-    _auto_subscribe = False
-    _client = None
+    _model = None
 
-    def init_plugin(self, config: Dict[str, Any] = None) -> None:
-        if not config:
-            return
-        
-        self._enabled = config.get("enabled")
-        self._openai_key = config.get("openai_key")
-        self._proxy = config.get("proxy")
-        self._auto_subscribe = config.get("auto_subscribe", False)
-
-        # 初始化 OpenAI 客户端
-        if self._enabled and self._openai_key:
-            self._client = OpenAiClient(
-                api_key=self._openai_key,
-                proxy=self._proxy
-            )
+    def init_plugin(self, config: dict = None):
+        if config:
+            self._enabled = config.get("enabled")
+            self._proxy = config.get("proxy")
+            self._recognize = config.get("recognize")
+            self._openai_url = config.get("openai_url")
+            self._openai_key = config.get("openai_key")
+            self._model = config.get("model")
+            if self._openai_url and self._openai_key:
+                self.openai = OpenAi(api_key=self._openai_key, api_url=self._openai_url,
+                                     proxy=settings.PROXY if self._proxy else None,
+                                     model=self._model)
 
     def get_state(self) -> bool:
         return self._enabled
 
-    @eventmanager.register(EventType.UserMessage)
-    def handle_message(self, event: Event):
-        """
-        处理用户消息
-        """
-        if not self._enabled or not self._client:
-            return
+    @staticmethod
+    def get_command() -> List[Dict[str, Any]]:
+        pass
 
-        message = event.event_data.get("text")
-        if not message:
-            return
-
-        # 构建提示词
-        prompt = f"""
-        请分析这个标题是否是电影或电视剧：{message}
-        如果是，请提供以下信息：
-        1. 类型（电影/电视剧）
-        2. 标准名称
-        3. 年份
-        4. 主要演员表（至少3个）
-        5. 简要剧情介绍
-        
-        如果不是影视作品，请回复：这不是一个影视作品。
-        """
-
-        try:
-            # 调用 GPT 获取分析结果
-            response = self._client.chat_completion(prompt)
-            if not response:
-                return
-            
-            # 发送结果通知
-            self.post_message(
-                title="媒体信息分析",
-                text=response
-            )
-
-            # 如果开启了自动订阅，触发订阅事件
-            if self._auto_subscribe and "这不是一个影视作品" not in response:
-                self._trigger_subscribe(message, response)
-
-        except Exception as e:
-            logger.error(f"处理消息失败: {str(e)}")
-
-    def _trigger_subscribe(self, title: str, info: str):
-        """
-        触发订阅事件
-        """
-        try:
-            # 解析 GPT 返回的信息
-            media_info = self._parse_media_info(info)
-            if media_info:
-                # 发送订阅事件
-                eventmanager.send_event(
-                    EventType.Subscribe,
-                    {
-                        "name": media_info.get("name"),
-                        "year": media_info.get("year"),
-                        "type": media_info.get("type"),
-                        "title": title,
-                    }
-                )
-        except Exception as e:
-            logger.error(f"触发订阅失败: {str(e)}")
-
-    def _parse_media_info(self, info: str) -> Optional[Dict]:
-        """
-        解析媒体信息
-        """
-        try:
-            # 简单的信息提取
-            lines = info.split('\n')
-            media_info = {}
-            
-            for line in lines:
-                if "类型：" in line:
-                    media_info["type"] = "电影" if "电影" in line else "电视剧"
-                elif "标准名称：" in line:
-                    media_info["name"] = line.split("：")[1].strip()
-                elif "年份：" in line:
-                    media_info["year"] = line.split("：")[1].strip()
-            
-            return media_info
-        except Exception as e:
-            logger.error(f"解析媒体信息失败: {str(e)}")
-            return None
+    def get_api(self) -> List[Dict[str, Any]]:
+        pass
 
     def get_form(self) -> Tuple[List[dict], Dict[str, Any]]:
         """
-        插件配置页面
+        拼装插件配置页面，需要返回两块数据：1、页面配置；2、数据结构
         """
         return [
             {
@@ -159,7 +77,7 @@ class AutoSubscribe(_PluginBase):
                                         'component': 'VSwitch',
                                         'props': {
                                             'model': 'enabled',
-                                            'label': '启用插件'
+                                            'label': '启用插件',
                                         }
                                     }
                                 ]
@@ -174,8 +92,24 @@ class AutoSubscribe(_PluginBase):
                                     {
                                         'component': 'VSwitch',
                                         'props': {
-                                            'model': 'auto_subscribe',
-                                            'label': '自动订阅'
+                                            'model': 'proxy',
+                                            'label': '使用代理服务器',
+                                        }
+                                    }
+                                ]
+                            },
+                            {
+                                'component': 'VCol',
+                                'props': {
+                                    'cols': 12,
+                                    'md': 4
+                                },
+                                'content': [
+                                    {
+                                        'component': 'VSwitch',
+                                        'props': {
+                                            'model': 'recognize',
+                                            'label': '辅助识别',
                                         }
                                     }
                                 ]
@@ -189,15 +123,15 @@ class AutoSubscribe(_PluginBase):
                                 'component': 'VCol',
                                 'props': {
                                     'cols': 12,
-                                    'md': 6
+                                    'md': 4
                                 },
                                 'content': [
                                     {
                                         'component': 'VTextField',
                                         'props': {
-                                            'model': 'openai_key',
-                                            'label': 'OpenAI API Key',
-                                            'placeholder': 'sk-xxx'
+                                            'model': 'openai_url',
+                                            'label': 'OpenAI API Url',
+                                            'placeholder': 'https://api.openai.com',
                                         }
                                     }
                                 ]
@@ -206,15 +140,53 @@ class AutoSubscribe(_PluginBase):
                                 'component': 'VCol',
                                 'props': {
                                     'cols': 12,
-                                    'md': 6
+                                    'md': 4
                                 },
                                 'content': [
                                     {
                                         'component': 'VTextField',
                                         'props': {
-                                            'model': 'proxy',
-                                            'label': '代理服务器',
-                                            'placeholder': 'http://127.0.0.1:7890'
+                                            'model': 'openai_key',
+                                            'label': 'sk-xxx'
+                                        }
+                                    }
+                                ]
+                            },
+                            {
+                                'component': 'VCol',
+                                'props': {
+                                    'cols': 12,
+                                    'md': 4
+                                },
+                                'content': [
+                                    {
+                                        'component': 'VTextField',
+                                        'props': {
+                                            'model': 'model',
+                                            'label': '自定义模型',
+                                            'placeholder': 'gpt-3.5-turbo',
+                                        }
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        'component': 'VRow',
+                        'content': [
+                            {
+                                'component': 'VCol',
+                                'props': {
+                                    'cols': 12,
+                                },
+                                'content': [
+                                    {
+                                        'component': 'VAlert',
+                                        'props': {
+                                            'type': 'info',
+                                            'variant': 'tonal',
+                                            'text': '开启插件后，消息交互时使用请[问帮你]开头，或者以？号结尾，或者超过10个汉字/单词，则会触发ChatGPT回复。'
+                                                    '开启辅助识别后，内置识别功能无法正常识别种子/文件名称时，将使用ChatGTP进行AI辅助识别，可以提升动漫等非规范命名的识别成功率。'
                                         }
                                     }
                                 ]
@@ -224,14 +196,88 @@ class AutoSubscribe(_PluginBase):
                 ]
             }
         ], {
-            'enabled': False,
-            'openai_key': '',
-            'proxy': '',
-            'auto_subscribe': False
+            "enabled": False,
+            "proxy": False,
+            "recognize": False,
+            "openai_url": "https://api.openai.com",
+            "openai_key": "",
+            "model": "gpt-3.5-turbo"
         }
 
     def get_page(self) -> List[dict]:
         pass
 
+    @eventmanager.register(EventType.UserMessage)
+    def talk(self, event: Event):
+        """
+        监听用户消息，获取ChatGPT回复
+        """
+        if not self._enabled:
+            return
+        if not self.openai:
+            return
+        text = event.event_data.get("text")
+        userid = event.event_data.get("userid")
+        channel = event.event_data.get("channel")
+        if not text:
+            return
+        response = self.openai.get_response(text=text, userid=userid)
+        if response:
+            self.post_message(channel=channel, title=response, userid=userid)
+
+    @eventmanager.register(ChainEventType.NameRecognize)
+    def recognize(self, event: Event):
+        """
+        监听识别事件，使用ChatGPT辅助识别名称
+        """
+        if not self._recognize:
+            return
+        if not event.event_data:
+            return
+        title = event.event_data.get("title")
+        if not title:
+            return
+        # 调用ChatGPT
+        response = self.openai.get_media_name(filename=title)
+        logger.info(f"ChatGPT返回结果：{response}")
+        if response:
+            event.event_data = {
+                'title': title,
+                'name': response.get("title"),
+                'year': response.get("year"),
+                'season': response.get("season"),
+                'episode': response.get("episode")
+            }
+        else:
+            event.event_data = {}
+
     def stop_service(self):
-        pass 
+        """
+        退出插件
+        """
+        pass
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+   
