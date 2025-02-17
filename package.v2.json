@@ -384,5 +384,16 @@
         "history": {
             "v1.0": "首次发布"
         }
+    },
+    "chatgpt2": {
+        "name": "ChatGPT2",
+        "description": "消息交互支持与ChatGPT对话。",
+        "version": "1.0",
+        "icon": "Chatgpt_A.png",
+        "author": "heruntime01",
+        "level": 1,
+        "history": {
+            "v1.0": "首次发布"
+        }
     }
 }
