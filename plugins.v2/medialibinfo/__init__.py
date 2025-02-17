@@ -1,92 +1,112 @@
 import time
-from typing import Any, List, Dict, Optional
+from typing import Any, List, Dict, Optional, Tuple
+from datetime import datetime
 
 from app.core.event import eventmanager, Event
 from app.helper.mediaserver import MediaServerHelper
 from app.log import logger
 from app.plugins import _PluginBase
-from app.schemas import ServiceInfo
-from app.schemas.types import EventType, MediaType, MediaImageType, NotificationType
+from app.schemas import ServiceInfo, Notification
+from app.schemas.types import EventType, MediaType, NotificationType
 from app.utils.web import WebUtils
 
 
 class MediaLibInfo(_PluginBase):
-    # 插件名称
-    plugin_name = "medialibinfo"
-    # 插件描述
+    """
+    媒体库信息插件
+    获取媒体服务器中的媒体库信息并展示
+    """
+    # 插件信息
+    plugin_name = "媒体库信息"
     plugin_desc = "获取媒体库服务器（Emby/Jellyfin/Plex）的媒体库名称及内容等信息。"
-    # 插件图标
     plugin_icon = "medialibrary.png"
-    # 插件版本
     plugin_version = "1.1"
-    # 插件作者
     plugin_author = "heruntime01"
-    # 作者主页
     author_url = "https://github.com/heruntime01"
-    # 插件配置项ID前缀
     plugin_config_prefix = "medialibinfo_"
-    # 加载顺序
     plugin_order = 15
-    # 可使用的用户级别
     auth_level = 1
+    plugin_version_flag = "v2"
 
     # 私有属性
-    mediaserver_helper = None
     _enabled = False
+    _debug = False
+    _notify = False
     _mediaservers = None
+    _last_update_time = None
 
     def init_plugin(self, config: dict = None):
-        self.mediaserver_helper = MediaServerHelper()
-        if config:
-            self._enabled = config.get("enabled")
-            self._mediaservers = config.get("mediaservers") or []
-
-    def service_infos(self, type_filter: Optional[str] = None) -> Optional[Dict[str, ServiceInfo]]:
         """
-        服务信息
+        插件初始化
+        """
+        self.mediaserver_helper = MediaServerHelper()
+        
+        if config:
+            self._enabled = config.get("enabled", False)
+            self._debug = config.get("debug", False)
+            self._notify = config.get("notify", False)
+            self._mediaservers = config.get("mediaservers", [])
+            self.plugin_config.update(config)
+
+        logger.info(f"媒体库信息插件启动，调试模式：{self._debug}")
+
+    def get_service_info(self, name: str = None) -> Optional[Dict[str, ServiceInfo]]:
+        """
+        获取媒体服务器信息
         """
         if not self._mediaservers:
-            logger.warning("尚未配置媒体服务器，请检查配置")
+            if self._debug:
+                logger.warning("尚未配置媒体服务器")
             return None
 
-        services = self.mediaserver_helper.get_services(type_filter=type_filter, name_filters=self._mediaservers)
-        if not services:
-            logger.warning("获取媒体服务器实例失败，请检查配置")
-            return None
-
-        active_services = {}
-        for service_name, service_info in services.items():
-            if service_info.instance.is_inactive():
-                logger.warning(f"媒体服务器 {service_name} 未连接，请检查配置")
+        try:
+            if name:
+                service = self.mediaserver_helper.get_service(name=name)
+                return {name: service} if service and not service.instance.is_inactive() else None
             else:
-                active_services[service_name] = service_info
-
-        if not active_services:
-            logger.warning("没有已连接的媒体服务器，请检查配置")
+                services = self.mediaserver_helper.get_services(name_filters=self._mediaservers)
+                return {name: service for name, service in services.items() 
+                       if service and not service.instance.is_inactive()}
+        except Exception as e:
+            logger.error(f"获取媒体服务器信息出错: {str(e)}")
             return None
 
-        return active_services
+    def get_libraries_info(self) -> List[Dict]:
+        """
+        获取所有媒体库信息
+        """
+        libraries = []
+        services = self.get_service_info()
+        
+        if not services:
+            return libraries
 
-    def service_info(self, name: str) -> Optional[ServiceInfo]:
-        """
-        服务信息
-        """
-        service_infos = self.service_infos() or {}
-        return service_infos.get(name)
+        for service_name, service_info in services.items():
+            try:
+                service_libs = service_info.instance.get_libraries()
+                if service_libs:
+                    for lib in service_libs:
+                        libraries.append({
+                            "library_name": lib.name,
+                            "library_type": lib.type,
+                            "library_items": lib.items,
+                            "server_name": service_name,
+                            "update_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        })
+                    if self._debug:
+                        logger.info(f"获取到 {service_name} 的 {len(service_libs)} 个媒体库")
+            except Exception as e:
+                logger.error(f"获取 {service_name} 媒体库信息出错: {str(e)}")
+
+        self._last_update_time = datetime.now()
+        return libraries
 
     def get_state(self) -> bool:
         return self._enabled
 
-    @staticmethod
-    def get_command() -> List[Dict[str, Any]]:
-        pass
-
-    def get_api(self) -> List[Dict[str, Any]]:
-        pass
-
     def get_form(self) -> Tuple[List[dict], Dict[str, Any]]:
         """
-        拼装插件配置页面，需要返回两块数据：1、页面配置；2、数据结构
+        插件配置页面
         """
         return [
             {
@@ -99,14 +119,46 @@ class MediaLibInfo(_PluginBase):
                                 'component': 'VCol',
                                 'props': {
                                     'cols': 12,
-                                    'md': 6
+                                    'md': 4
                                 },
                                 'content': [
                                     {
                                         'component': 'VSwitch',
                                         'props': {
                                             'model': 'enabled',
-                                            'label': '启用插件',
+                                            'label': '启用插件'
+                                        }
+                                    }
+                                ]
+                            },
+                            {
+                                'component': 'VCol',
+                                'props': {
+                                    'cols': 12,
+                                    'md': 4
+                                },
+                                'content': [
+                                    {
+                                        'component': 'VSwitch',
+                                        'props': {
+                                            'model': 'debug',
+                                            'label': '调试日志'
+                                        }
+                                    }
+                                ]
+                            },
+                            {
+                                'component': 'VCol',
+                                'props': {
+                                    'cols': 12,
+                                    'md': 4
+                                },
+                                'content': [
+                                    {
+                                        'component': 'VSwitch',
+                                        'props': {
+                                            'model': 'notify',
+                                            'label': '更新通知'
                                         }
                                     }
                                 ]
@@ -131,7 +183,7 @@ class MediaLibInfo(_PluginBase):
                                             'model': 'mediaservers',
                                             'label': '媒体服务器',
                                             'items': [{"title": config.name, "value": config.name}
-                                                      for config in self.mediaserver_helper.get_configs().values()]
+                                                     for config in self.mediaserver_helper.get_configs().values()]
                                         }
                                     }
                                 ]
@@ -142,44 +194,56 @@ class MediaLibInfo(_PluginBase):
             }
         ], {
             "enabled": False,
+            "debug": False,
+            "notify": False,
             "mediaservers": []
         }
 
     def get_page(self) -> List[dict]:
         """
-        获取媒体库信息页面
+        插件详情页面
         """
         if not self._enabled:
             return []
 
-        media_libraries = []
-        services = self.service_infos()
-        if services:
-            for service_name, service_info in services.items():
-                libraries = service_info.instance.get_libraries()
-                if libraries:
-                    for library in libraries:
-                        media_libraries.append({
-                            "library_name": library.name,
-                            "library_type": library.type,
-                            "library_items": library.items,
-                            "server_name": service_name
-                        })
+        try:
+            libraries = self.get_libraries_info()
+            
+            if not libraries:
+                return [{
+                    'component': 'VAlert',
+                    'props': {
+                        'type': 'warning',
+                        'variant': 'tonal',
+                        'text': '未获取到媒体库信息，请检查配置'
+                    }
+                }]
 
-        return [
-            {
-                'component': 'VTable',
-                'props': {
-                    'headers': [
-                        {"text": "媒体库名称", "value": "library_name"},
-                        {"text": "媒体库类型", "value": "library_type"},
-                        {"text": "媒体库内容", "value": "library_items"},
-                        {"text": "媒体服务器", "value": "server_name"}
-                    ],
-                    'items': media_libraries
+            return [
+                {
+                    'component': 'VTable',
+                    'props': {
+                        'headers': [
+                            {"text": "媒体库名称", "value": "library_name"},
+                            {"text": "媒体库类型", "value": "library_type"},
+                            {"text": "媒体数量", "value": "library_items"},
+                            {"text": "媒体服务器", "value": "server_name"},
+                            {"text": "更新时间", "value": "update_time"}
+                        ],
+                        'items': libraries
+                    }
                 }
-            }
-        ]
+            ]
+        except Exception as e:
+            logger.error(f"生成页面数据出错: {str(e)}")
+            return [{
+                'component': 'VAlert',
+                'props': {
+                    'type': 'error',
+                    'variant': 'tonal',
+                    'text': f'获取媒体库信息出错: {str(e)}'
+                }
+            }]
 
     @eventmanager.register(EventType.MediaLibraryUpdated)
     def update(self, event: Event):
@@ -189,8 +253,17 @@ class MediaLibInfo(_PluginBase):
         if not self._enabled:
             return
 
-        logger.info("媒体库更新事件触发，正在获取媒体库信息")
-        self.get_page()
+        if self._debug:
+            logger.info("媒体库更新事件触发，正在更新媒体库信息")
+
+        libraries = self.get_libraries_info()
+        
+        if self._notify and libraries:
+            self.chain.post_message(Notification(
+                mtype=NotificationType.MediaServer,
+                title="媒体库信息已更新",
+                text=f"共获取到 {len(libraries)} 个媒体库的信息"
+            ))
 
     def stop_service(self):
         """
