@@ -319,6 +319,7 @@
     "airecognition": {
         "name": "AI辅助识别",
         "description": "使用AI技术辅助识别影视信息",
+        "labels": "工具",
         "version": "1.0",
         "icon": "Docker.png",
         "author": "heruntime01",
@@ -330,9 +331,10 @@
     "autobackuptest": {
         "name": "自动备份测试",
         "description": "自动备份数据和配置文件。",
+        "labels": "工具",
         "version": "1.0",
         "icon": "Time_machine_B.png",
-        "author": "thsrite",
+        "author": "heruntime01",
         "level": 1,
         "history": {
             "v1.0": "首次发布"
@@ -341,12 +343,13 @@
     "follownotify": {
         "name": "收藏更新通知",
         "description": "在Emby上收藏剧集，当有新集更新时发送通知。适合针对性的获取剧集更新通知、榜单订阅时有不看的剧集不想收到更新通知。",
-        "version": "1.1",
+        "labels": "工具",
+        "version": "1.5",
         "icon": "like.jpg",
-        "author": "honue",
+        "author": "heruntime01",
         "level": 1,
         "history": {
-            "v1.1": "首次发布V2版本"
+            "v1.5": "首次发布V2版本"
         }
     },
     "medialibinfo": {
