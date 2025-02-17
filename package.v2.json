@@ -348,5 +348,16 @@
         "history": {
             "v1.1": "首次发布V2版本"
         }
+    },
+    "medialibinfo": {
+        "name": "媒体库信息",
+        "description": "获取并展示媒体库中的电影和电视剧信息",
+        "version": "1.0",
+        "icon": "movie.jpg",
+        "author": "your_name",
+        "level": 1,
+        "history": {
+            "v1.0": "首次发布"
+        }
     }
 }
