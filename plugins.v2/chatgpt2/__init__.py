@@ -27,6 +27,8 @@ class ChatGPT(_PluginBase):
     plugin_order = 16
     # 可使用的用户级别
     auth_level = 1
+    # 版本标识
+    plugin_version_flag = "v2"
 
     # 私有属性
     openai = None
