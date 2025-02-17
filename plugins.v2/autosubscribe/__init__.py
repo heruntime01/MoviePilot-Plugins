@@ -5,7 +5,7 @@ from app.core.event import eventmanager, Event
 from app.plugins import _PluginBase
 from app.log import logger
 from app.schemas import NotificationType
-from app.schemas.types import EventType, MediaType
+from app.schemas.types import EventType, MediaType,ChainEventType      
 from .openai import OpenAiClient
 
 class AutoSubscribe(_PluginBase):
