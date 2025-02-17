@@ -1,98 +1,199 @@
-from typing import Any, Dict, List
-from app.core.config import settings
-from app.plugins import _PluginBase
+import time
+from typing import Any, List, Dict, Optional
+
+from app.core.event import eventmanager, Event
+from app.helper.mediaserver import MediaServerHelper
 from app.log import logger
-from app.schemas.types import EventType
-from app.helper.service import ServiceBaseHelper
-from app.db.systemconfig_oper import SystemConfigOper
-from app.schemas import MediaServerConf
+from app.plugins import _PluginBase
+from app.schemas import ServiceInfo
+from app.schemas.types import EventType, MediaType, MediaImageType, NotificationType
+from app.utils.web import WebUtils
 
 
-class MediaInfo(_PluginBase):
-    plugin_name = "媒体信息"
-    plugin_desc = "获取媒体库中的电视剧名称、电影名称等信息。"
+class MediaLibInfo(_PluginBase):
+    # 插件名称
+    plugin_name = "medialibinfo"
+    # 插件描述
+    plugin_desc = "获取媒体库服务器（Emby/Jellyfin/Plex）的媒体库名称及内容等信息。"
+    # 插件图标
+    plugin_icon = "medialibrary.png"
+    # 插件版本
     plugin_version = "1.1"
+    # 插件作者
     plugin_author = "heruntime01"
-    plugin_config_prefix = "mediainfo_"
-    plugin_order = 20
+    # 作者主页
+    author_url = "https://github.com/heruntime01"
+    # 插件配置项ID前缀
+    plugin_config_prefix = "medialibinfo_"
+    # 加载顺序
+    plugin_order = 15
+    # 可使用的用户级别
     auth_level = 1
-    plugin_version_flag = "v2"
 
-    _enabled: bool = False
-    _media_server_helper: ServiceBaseHelper[MediaServerConf]
+    # 私有属性
+    mediaserver_helper = None
+    _enabled = False
+    _mediaservers = None
 
-    def init_plugin(self, config: Dict[str, Any] = None) -> None:
-        if not hasattr(settings, 'VERSION_FLAG') or settings.VERSION_FLAG != "v2":
-            return
-
-        # 初始化配置
+    def init_plugin(self, config: dict = None):
+        self.mediaserver_helper = MediaServerHelper()
         if config:
-            self._enabled = config.get("enabled", False)
+            self._enabled = config.get("enabled")
+            self._mediaservers = config.get("mediaservers") or []
 
-        # 初始化媒体服务器帮助类
-        self._media_server_helper = ServiceBaseHelper(
-            config_key=SystemConfigKey.MediaServers,
-            conf_type=MediaServerConf,
-            module_type=ModuleType.MediaServer
-        )
+    def service_infos(self, type_filter: Optional[str] = None) -> Optional[Dict[str, ServiceInfo]]:
+        """
+        服务信息
+        """
+        if not self._mediaservers:
+            logger.warning("尚未配置媒体服务器，请检查配置")
+            return None
 
-        logger.info(f"媒体信息服务启动")
+        services = self.mediaserver_helper.get_services(type_filter=type_filter, name_filters=self._mediaservers)
+        if not services:
+            logger.warning("获取媒体服务器实例失败，请检查配置")
+            return None
 
-    @eventmanager.register(EventType.MediaRecognizeConvert)
-    def get_media_info(self, event):
+        active_services = {}
+        for service_name, service_info in services.items():
+            if service_info.instance.is_inactive():
+                logger.warning(f"媒体服务器 {service_name} 未连接，请检查配置")
+            else:
+                active_services[service_name] = service_info
+
+        if not active_services:
+            logger.warning("没有已连接的媒体服务器，请检查配置")
+            return None
+
+        return active_services
+
+    def service_info(self, name: str) -> Optional[ServiceInfo]:
+        """
+        服务信息
+        """
+        service_infos = self.service_infos() or {}
+        return service_infos.get(name)
+
+    def get_state(self) -> bool:
+        return self._enabled
+
+    @staticmethod
+    def get_command() -> List[Dict[str, Any]]:
+        pass
+
+    def get_api(self) -> List[Dict[str, Any]]:
+        pass
+
+    def get_form(self) -> Tuple[List[dict], Dict[str, Any]]:
+        """
+        拼装插件配置页面，需要返回两块数据：1、页面配置；2、数据结构
+        """
+        return [
+            {
+                'component': 'VForm',
+                'content': [
+                    {
+                        'component': 'VRow',
+                        'content': [
+                            {
+                                'component': 'VCol',
+                                'props': {
+                                    'cols': 12,
+                                    'md': 6
+                                },
+                                'content': [
+                                    {
+                                        'component': 'VSwitch',
+                                        'props': {
+                                            'model': 'enabled',
+                                            'label': '启用插件',
+                                        }
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        'component': 'VRow',
+                        'content': [
+                            {
+                                'component': 'VCol',
+                                'props': {
+                                    'cols': 12
+                                },
+                                'content': [
+                                    {
+                                        'component': 'VSelect',
+                                        'props': {
+                                            'multiple': True,
+                                            'chips': True,
+                                            'clearable': True,
+                                            'model': 'mediaservers',
+                                            'label': '媒体服务器',
+                                            'items': [{"title": config.name, "value": config.name}
+                                                      for config in self.mediaserver_helper.get_configs().values()]
+                                        }
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            }
+        ], {
+            "enabled": False,
+            "mediaservers": []
+        }
+
+    def get_page(self) -> List[dict]:
+        """
+        获取媒体库信息页面
+        """
+        if not self._enabled:
+            return []
+
+        media_libraries = []
+        services = self.service_infos()
+        if services:
+            for service_name, service_info in services.items():
+                libraries = service_info.instance.get_libraries()
+                if libraries:
+                    for library in libraries:
+                        media_libraries.append({
+                            "library_name": library.name,
+                            "library_type": library.type,
+                            "library_items": library.items,
+                            "server_name": service_name
+                        })
+
+        return [
+            {
+                'component': 'VTable',
+                'props': {
+                    'headers': [
+                        {"text": "媒体库名称", "value": "library_name"},
+                        {"text": "媒体库类型", "value": "library_type"},
+                        {"text": "媒体库内容", "value": "library_items"},
+                        {"text": "媒体服务器", "value": "server_name"}
+                    ],
+                    'items': media_libraries
+                }
+            }
+        ]
+
+    @eventmanager.register(EventType.MediaLibraryUpdated)
+    def update(self, event: Event):
+        """
+        媒体库更新事件处理
+        """
         if not self._enabled:
             return
 
-        mediaid = event.event_data.get("mediaid")
-        convert_type = event.event_data.get("convert_type")
+        logger.info("媒体库更新事件触发，正在获取媒体库信息")
+        self.get_page()
 
-        if not mediaid or not convert_type:
-            logger.error("缺少必要的参数：mediaid 或 convert_type")
-            return
-
-        try:
-            # 解析 mediaid
-            mediaid_parts = mediaid.split(":")
-            if len(mediaid_parts) != 2:
-                raise ValueError("无效的 mediaid 格式")
-
-            media_source, media_id = mediaid_parts
-
-            # 获取媒体服务器实例
-            media_server = self._get_media_server(media_source)
-            if not media_server:
-                logger.error(f"未找到对应的媒体服务器：{media_source}")
-                return
-
-            # 调用媒体服务器API获取详细信息
-            media_details = media_server.get_media_detail(media_id)
-            if not media_details:
-                logger.error(f"无法获取媒体详情：{mediaid}")
-                return
-
-            # 发送结果
-            self._send_media_info_result(media_details)
-
-        except Exception as e:
-            logger.error(f"处理媒体信息时出错: {str(e)}")
-
-    def _get_media_server(self, media_source: str) -> Optional[Any]:
+    def stop_service(self):
         """
-        获取指定类型的媒体服务器实例
-        :param media_source: 媒体源类型（如 'plex', 'emby', 'jellyfin'）
-        :return: 对应的媒体服务器实例
+        退出插件
         """
-        service_info = self._media_server_helper.get_service(name=media_source)
-        if service_info and service_info.instance:
-            return service_info.instance
-        return None
-
-    def _send_media_info_result(self, media_details: Dict[str, Any]):
-        """
-        发送媒体信息结果事件
-        :param media_details: 媒体详情字典
-        """
-        eventmanager.send_event(
-            EventType.MediaRecognizeConvert,
-            {"media_dict": media_details}
-        )
+        pass
