@@ -49,7 +49,7 @@ class AiRecognition(_PluginBase):
 
         logger.info(f"AI辅助识别服务启动，调试模式：{self._debug}")
 
-    @eventmanager.register(EventType.NameRecognize)
+    @eventmanager.register(EventType.NameRecognizeMediaInfo)
     def recognize(self, event):
         """
         对接收到的识别事件进行处理

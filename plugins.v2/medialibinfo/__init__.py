@@ -4,7 +4,7 @@ from app.core.meta import MetaBase
 from app.plugins import _PluginBase
 from app.log import logger
 from app.schemas import NotificationType
-from app.utils.types import MediaType
+from app.core.types import MediaType
 from app.core.context import MediaInfo
 
 
